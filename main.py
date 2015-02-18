@@ -55,6 +55,9 @@ def run(config):
       logger.warn("Timeout occured - retrying in a bit: %s", e)
     except requests.exceptions.ConnectionError, e:
       logger.warn("Connection error occured - retrying in a bit: %s", e)
+    except RequestUnsuccesfulError, e:
+      logger.warn("Response returned unhandled status code: %s", e)
+
 
     time.sleep(sleep_time)
 
@@ -113,9 +116,7 @@ class Request(object):
       
       return self.parse(page_result['hits'])
     else:
-      logger.error("Request returned an error %s : \n%s", response.status_code, response.text)
-
-      return None
+      raise RequestUnsuccesfulError(response.status_code)
 
   def read_field(self, entry, fieldname):
     if fieldname in entry['fields']:
@@ -194,6 +195,14 @@ class ErrorTransactionListing(Request):
   def parse(self, hits):
     logger.debug("Received %s results", len(hits))
     return [tx['fields']['transactionId'][0] for tx in hits]
+
+class RequestUnsuccesfulError(Exception):
+  def __init__(self, status_code):
+    self.status_code = status_code
+
+  def __str__(self):
+    return repr(self.status_code)
+
 
 def validate_program():
   import doctest
