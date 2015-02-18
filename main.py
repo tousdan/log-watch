@@ -7,17 +7,27 @@ from datetime import datetime, timedelta
 
 from requests.auth import HTTPBasicAuth
 
-
-
-logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%I:%M:%S %p')
+#Setup logging
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+handler = logging.StreamHandler()
+handler.setLevel(logging.INFO)
+
+formatter = logging.Formatter('%(asctime)s %(message)s',  datefmt='%I:%M:%S %p')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 
 pp = pprint.PrettyPrinter(indent=2)
 
-sleep_time = 60
-
 def run(config):
   environment = config['environment']
+  
+  try:
+    sleep_time = config['sleep_time']
+  except KeyError: 
+    sleep_time = 60
+
   tx_dir = "C:/temp/transactions/%s" % (environment, )
 
   if not os.path.exists(tx_dir):
@@ -31,13 +41,20 @@ def run(config):
 
     indexes = indexes_for_date(environment, daterange) 
 
-    transactions = ErrorTransactionListing(indexes, daterange, config).run()
+    try :
+      transactions = ErrorTransactionListing(indexes, daterange, config).run()
 
-    for tx in transactions:
-      if not has_transaction(tx_dir, date_folder, tx):
-        detail = TransactionDetail(indexes, tx, config).run()
-        
-        save_transaction(tx_dir, date_folder, tx, detail)
+      for tx in transactions:
+        if not has_transaction(tx_dir, date_folder, tx):
+          logger.debug("Found a new error %s", tx)
+
+          detail = TransactionDetail(indexes, tx, config).run()
+
+          save_transaction(tx_dir, date_folder, tx, detail)
+    except requests.exceptions.TimeoutError, e:
+      logger.warn("Timeout occured - retrying in a bit: %s", e)
+    except requests.exceptions.ConnectionError, e:
+      logger.warn("Connection error occured - retrying in a bit: %s", e)
 
     time.sleep(sleep_time)
 
@@ -52,6 +69,7 @@ def save_transaction(tx_dir, date_folder, transactionId, detail):
 
   path = os.path.join(target, "%s.json" % (transactionId,))
 
+  logger.debug("Saving error detail to %s results", path)
   with open(path, "w") as output:
     output.write(json.dumps(detail, sort_keys=True, indent=4, separators=(',', ': ')))
 
@@ -82,20 +100,22 @@ class Request(object):
 
   def run(self):
     response = requests.post("%s%s/_search" % (config['es_url'], ",".join(self.indexes)), 
-                              auth=HTTPBasicAuth(config['username'], config['password']), 
-                              data=json.dumps(self.request_data))
-    json_response = response.json()
-
+                            auth=HTTPBasicAuth(config['username'], config['password']), 
+                            data=json.dumps(self.request_data))
+    
     logger.debug("Launching request")
     if response.status_code == 200:
+      json_response = response.json()
       if shards_failed(json_response):
         logger.error("Some shards failed to respond")
 
       page_result = json_response['hits']
-
+      
       return self.parse(page_result['hits'])
     else:
-      logger.error("Request returned an error %s : \n%s", response.status_code, json_response)
+      logger.error("Request returned an error %s : \n%s", response.status_code, response.text)
+
+      return None
 
   def read_field(self, entry, fieldname):
     if fieldname in entry['fields']:
@@ -133,6 +153,7 @@ class TransactionDetail(Request):
 
   def parse(self, hits):
     result = []
+    logger.debug("Fetching transaction detail for %s", self.transactionId)
     for entry in hits:
       tstamp, tx, className, msg, stack = self.read_fields(entry, ('@timestamp', 'transactionId', 'loggerName', 'message', 'stacktrace'))
 
@@ -144,7 +165,7 @@ class TransactionDetail(Request):
         'stack': stack,
       })
 
-    logger.warn("%s -> %s", self.transactionId, result[-1]['message'][:50])
+    logger.info("%s -> %s", self.transactionId, result[-1]['message'][:50])
 
     return result
 
@@ -171,6 +192,7 @@ class ErrorTransactionListing(Request):
     Request.__init__(self, indexes, request_data, config)
 
   def parse(self, hits):
+    logger.debug("Received %s results", len(hits))
     return [tx['fields']['transactionId'][0] for tx in hits]
 
 def validate_program():
@@ -193,5 +215,9 @@ def read_config():
 if __name__ == '__main__':
   validate_program()
   config = read_config()
-  run(config)
+
+  try:
+    run(config)
+  except KeyboardInterrupt:
+    pass
 
