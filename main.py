@@ -22,7 +22,7 @@ pp = pprint.PrettyPrinter(indent=2)
 
 def run(config):
   environment = config['environment']
-  
+
   try:
     sleep_time = config['sleep_time']
   except KeyError: 
@@ -51,7 +51,7 @@ def run(config):
           detail = TransactionDetail(indexes, tx, config).run()
 
           save_transaction(tx_dir, date_folder, tx, detail)
-    except requests.exceptions.TimeoutError, e:
+    except requests.exceptions.Timeout, e:
       logger.warn("Timeout occured - retrying in a bit: %s", e)
     except requests.exceptions.ConnectionError, e:
       logger.warn("Connection error occured - retrying in a bit: %s", e)
