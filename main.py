@@ -3,6 +3,8 @@ import pprint, time
 import sys, os
 import logging
 import doctest
+import argparse
+
 from datetime import datetime, timedelta
 
 from requests.auth import HTTPBasicAuth
@@ -100,6 +102,8 @@ class Request(object):
     self.indexes = indexes
     self.request_data = request_data
     self.config = config
+    self.environment = self.config_value('environment')
+
 
   def run(self):
     response = requests.post("%s%s/_search" % (config['es_url'], ",".join(self.indexes)), 
@@ -130,13 +134,20 @@ class Request(object):
   def parse(self, hits):
     return hits
 
+  def config_value(self, key):
+    if key in self.config:
+      return self.config[key]
+
+    return None
+
 
 class TransactionDetail(Request):
   def __init__(self, indexes, transactionId, config):
     self.transactionId = transactionId
+
     request_data = {
        "sort": "@timestamp",
-       "fields": ["@timestamp", "loggerName", "message", "stacktrace", "transactionId"],
+       "fields": ["@timestamp", "loggerName", "message", "stacktrace", "transactionId", "proteus-username", "referer"],
        "query": {
         "filtered": {
           "query": {
@@ -152,11 +163,19 @@ class TransactionDetail(Request):
 
     Request.__init__(self, indexes, request_data, config)
 
+  def log_to_slack(self, message):
+    slack_conf = self.config_value('slack_bot')
+
+    requests.get("https://slack.com/api/chat.postMessage?token=%s&channel=%s&text=%s" % (slack_conf['token'], slack_conf['channel'], message))
+
   def parse(self, hits):
     result = []
     logger.debug("Fetching transaction detail for %s", self.transactionId)
+    username = None
+    referer = None
     for entry in hits:
       tstamp, tx, className, msg, stack = self.read_fields(entry, ('@timestamp', 'transactionId', 'loggerName', 'message', 'stacktrace'))
+      raw_user, raw_referer = self.read_fields(entry, ('proteus-username', 'referer'))
 
       result.append({
         'transaction': tx,
@@ -166,7 +185,24 @@ class TransactionDetail(Request):
         'stack': stack,
       })
 
-    logger.info("%s -> %s", self.transactionId, result[-1]['message'][:50])
+      if raw_user:
+        username = raw_user
+
+      if raw_referer:
+        referer = raw_referer
+
+    for parsed in result:
+      parsed['username'] = username
+      parsed['referer'] = referer
+
+    error_message = result[-1]['message'][:50]
+    message = "[%s] %s -> %s (%s)" % (self.environment, self.transactionId, error_message, username)
+
+    if self.config_value('slack_bot'):
+      self.log_to_slack(message)
+      
+
+    logger.info(message)
 
     return result
 
@@ -211,9 +247,8 @@ def validate_program():
   if failures > 0:
     sys.exit(-1)
 
-def read_config():
-  with open("config.json") as config_file:
-    config = json.loads(config_file.read())
+def read_config(config_file):
+  config = json.loads(config_file.read())
 
   for key in ['username', 'password', 'environment', 'es_url']:
     if not key in config:
@@ -223,7 +258,13 @@ def read_config():
 
 if __name__ == '__main__':
   validate_program()
-  config = read_config()
+
+  parser = argparse.ArgumentParser(description="Proteus API error transaction saver (and broadcaster!)")
+  parser.add_argument("--config", action='store', dest='config', help='location of configuration file to use (defaults to config.json)', default='config.json', type=open)
+  args = parser.parse_args()
+
+  with args.config as config_file:
+    config = read_config(config_file)
 
   try:
     run(config)
