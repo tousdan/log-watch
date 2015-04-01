@@ -9,6 +9,13 @@ from datetime import datetime, timedelta
 from requests.auth import HTTPBasicAuth
 
 from api_requests import TransactionDetail, ErrorTransactionListing, RequestUnsuccesfulError
+from util import read_config, has_transaction, save_transaction
+
+import SocketServer
+import BaseHTTPServer
+import SimpleHTTPServer
+
+import threading
 
 logging.config.fileConfig('logging.conf')
 #Setup logging
@@ -26,7 +33,6 @@ logger = logging.getLogger(__name__)
 
 def indexes_for_date(environment, dates):
   return set(["cc-proteus-%s.%s" % (environment, str(dt.isocalendar()[1]), ) for dt in dates])
-
 
 def run(config):
 
@@ -67,32 +73,24 @@ def run(config):
     except RequestUnsuccesfulError, e:
       logger.warn("Response returned unhandled status code: %s", e)
 
-
     time.sleep(sleep_time)
 
-def has_transaction(tx_dir, date_folder, transactionId):
-  return os.path.isfile(os.path.join(tx_dir, date_folder, "%s.json" % (transactionId,)))
 
-def save_transaction(tx_dir, date_folder, transactionId, detail):
-  target = os.path.join(tx_dir, date_folder)
+# Simple HTTP Server which supports multiple requests..
+class TransactionHTTPServer(SocketServer.ThreadingMixIn,
+                            BaseHTTPServer.HTTPServer):
+  pass
 
-  if not os.path.exists(target):
-    os.makedirs(target)
+def get_transaction_server(tx_dir, serve_config):
+  port = serve_config['port']
 
-  path = os.path.join(target, "%s.json" % (transactionId,))
+  os.chdir(tx_dir)
+  s = TransactionHTTPServer(('', port), SimpleHTTPServer.SimpleHTTPRequestHandler)
+  t = threading.Thread(target=s.serve_forever)
 
-  logger.debug("Saving error detail to %s results", path)
-  with open(path, "w") as output:
-    output.write(json.dumps(detail, sort_keys=True, indent=4, separators=(',', ': ')))
+  t.setDaemon(True)
 
-def read_config(config_file):
-  config = json.loads(config_file.read())
-
-  for key in ['username', 'password', 'environment', 'es_url', 'logs_dir']:
-    if not key in config:
-      raise NameError(key)
-  
-  return config
+  return t
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description="Proteus API error transaction saver (and broadcaster!)")
@@ -103,7 +101,14 @@ if __name__ == '__main__':
     config = read_config(config_file)
 
   try:
+    if 'web_serve' in config:
+      serve = get_transaction_server(config['logs_dir'], config['web_serve'])
+      serve.start()
+
+    print 'httpserver started'
     run(config)
   except KeyboardInterrupt:
     pass
+
+
 

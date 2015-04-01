@@ -1,0 +1,9 @@
+{
+	"username": "johnsmith",
+	"password": "confusedbeing",
+	"es_url": "http://my-elasticsearch-server/ES",
+	"environment": "qa",
+  "web_serve": {
+    "port": 4884
+  }
+}

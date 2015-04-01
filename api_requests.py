@@ -15,8 +15,6 @@ def totimestamp(dt):
 def shards_failed(response):
   return response['_shards']['failed'] > 0
 
-
-
 class RequestUnsuccesfulError(Exception):
   def __init__(self, status_code):
     self.status_code = status_code
