@@ -96,8 +96,7 @@ class ErrorTransactionListing(Request):
     Request.__init__(self, indexes, request_data, config)
 
   def parse(self, hits):
-    self.logger.debug("Received %s results", len(hits))
-    return [tx['fields']['transactionId'][0] for tx in hits]
+    return [tx['fields']['transactionId'][0] for tx in hits if 'fields' in tx]
 
 class TransactionDetail(Request):
   """
@@ -156,8 +155,8 @@ class TransactionDetail(Request):
       parsed['username'] = username
       parsed['referer'] = referer
 
-    error_message = result[-1]['message'][:50]
-    message = "[%s] %s -> %s (%s)" % (self.environment, self.transactionId, error_message, username)
+    error_message = result[-1]['message'][:75]
+    message = "%s -> %s (%s)" % (self.transactionId, error_message, username)
 
     if self.config_value('slack_bot'):
       self.log_to_slack(message)
