@@ -101,8 +101,9 @@ class TransactionDetail(Request):
   """
   Fetches the detail of an API transaction
   """
-  def __init__(self, indexes, transactionId, config):
+  def __init__(self, indexes, transactionId, config, http_path_to_tx):
     self.transactionId = transactionId
+    self.http_path = http_path_to_tx
 
     request_data = {
        "sort": "@timestamp",
@@ -155,8 +156,14 @@ class TransactionDetail(Request):
       parsed['referer'] = referer
 
     error_message = result[-1]['message'][:50]
-    message = "[%s] %s -> %s (%s)" % (self.environment, self.transactionId, error_message, username)
 
+    transaction_part = self.transactionId
+
+    if self.http_path:
+      transaction_part = "<%s|%s>" % (self.http_path, self.transactionId)
+
+    message = "[%s] %s -> %s (%s)" % (self.environment, transaction_part, error_message, username)
+    
     if self.config_value('slack_bot'):
       self.log_to_slack(message)
       

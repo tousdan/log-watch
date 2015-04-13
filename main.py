@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from requests.auth import HTTPBasicAuth
 
 from api_requests import TransactionDetail, ErrorTransactionListing, RequestUnsuccesfulError
-from util import read_config, has_transaction, save_transaction
+from util import read_config, has_transaction, save_transaction, get_transaction_relative_path
 
 import SocketServer
 import BaseHTTPServer
@@ -30,6 +30,7 @@ ch.setFormatter(formatter)
 
 logger = logging.getLogger(__name__)
 
+has_http_server = False
 
 def indexes_for_date(environment, dates):
   return set(["cc-proteus-%s.%s" % (environment, str(dt.isocalendar()[1]), ) for dt in dates])
@@ -63,7 +64,11 @@ def run(config):
         if not has_transaction(tx_dir, date_folder, tx):
           logger.debug("Found a new error %s", tx)
 
-          detail = TransactionDetail(indexes, tx, config).run()
+          tx_url = None
+          if has_http_server:
+            tx_url = get_http_tx_url(config, date_folder, tx) 
+
+          detail = TransactionDetail(indexes, tx, config, tx_url).run()
 
           save_transaction(tx_dir, date_folder, tx, detail)
     except Timeout, e:
@@ -75,6 +80,10 @@ def run(config):
 
     time.sleep(sleep_time)
 
+def get_http_tx_url(config, date_folder, tx):
+  return "http://%s:%s/%s" % (config['web_serve']['domain'],
+                       config['web_serve']['port'],
+                       get_transaction_relative_path(date_folder, tx))
 
 # Simple HTTP Server which supports multiple requests..
 class TransactionHTTPServer(SocketServer.ThreadingMixIn,
@@ -100,12 +109,16 @@ if __name__ == '__main__':
   with args.config as config_file:
     config = read_config(config_file)
 
-  try:
-    if 'web_serve' in config:
-      serve = get_transaction_server(config['logs_dir'], config['web_serve'])
-      serve.start()
+  has_http_server = 'web_serve' in config
 
-    print 'httpserver started'
+  try:
+    if has_http_server:
+      tx_dir = os.path.join(config['logs_dir'], config['environment'])
+      serve = get_transaction_server(tx_dir, config['web_serve'])
+      serve.start()
+      print 'httpserver started'
+
+    
     run(config)
   except KeyboardInterrupt:
     pass

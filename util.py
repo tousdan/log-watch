@@ -37,3 +37,7 @@ def get_transaction(tx_dir, date_folder, transactionId):
       return in_data.read()
 
   return None
+
+def get_transaction_relative_path(date_folder, tx):
+  return "%s/%s.json" % (date_folder, tx)
+
