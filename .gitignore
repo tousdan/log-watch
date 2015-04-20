@@ -54,4 +54,4 @@ docs/_build/
 target/
 
 #Configuration file
-config.json
+config*.json
