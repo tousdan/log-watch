@@ -123,10 +123,39 @@ class TransactionDetail(Request):
 
     Request.__init__(self, indexes, request_data, config)
 
-  def log_to_slack(self, message):
+  def log_to_slack(self, message, username, transaction_part):
     slack_conf = self.config_value('slack_bot')
 
-    requests.get("https://slack.com/api/chat.postMessage?token=%s&channel=%s&text=%s" % (slack_conf['token'], slack_conf['channel'], message))
+    bot_name = slack_conf['bot_name'] if 'bot_name' in slack_conf else 'APIErrorBot'
+
+    attachments = [
+      {
+        'fallback': message,
+        'color': 'warning',
+        'text': message,
+        'fields': [
+          {
+            'title': 'Transaction-Id',
+            'value': str(transaction_part),
+            'short': True
+          },
+          {
+            'title': 'Username',
+            'value': username,
+            'short': True
+          },
+        ]
+      }
+    ]
+
+    requests.get("https://slack.com/api/chat.postMessage?token=%s&channel=%s&attachments=%s&username=%s" % (slack_conf['token'], 
+                                                                                                     slack_conf['channel'], 
+                                                                                                     json.dumps(attachments),
+                                                                                                     bot_name))
+    #requests.get("https://slack.com/api/chat.postMessage?token=%s&channel=%s&text=%s&username=%s" % (slack_conf['token'], 
+    #                                                                                                 slack_conf['channel'], 
+    #                                                                                                 message, 
+    #                                                                                                 bot_name))
 
   def parse(self, hits):
     result = []
@@ -155,20 +184,18 @@ class TransactionDetail(Request):
       parsed['username'] = username
       parsed['referer'] = referer
 
-    error_message = result[-1]['message'][:50]
+    error_message = result[-1]['message'][:100]
 
     transaction_part = self.transactionId
 
     if self.http_path:
       transaction_part = "<%s|%s>" % (self.http_path, self.transactionId)
-
-    message = "[%s] %s -> %s (%s)" % (self.environment, transaction_part, error_message, username)
     
     if self.config_value('slack_bot'):
-      self.log_to_slack(message)
+      self.log_to_slack(error_message, username, transaction_part)
       
 
-    self.logger.info(message)
+    self.logger.info("[%s] %s -> %s (%s)" % (self.environment, transaction_part, error_message, username))
 
     return result
 
