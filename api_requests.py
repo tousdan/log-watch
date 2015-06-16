@@ -191,7 +191,7 @@ class TransactionDetail(Request):
     if self.http_path:
       transaction_part = "<%s|%s>" % (self.http_path, self.transactionId)
     
-    if self.config_value('slack_bot'):
+    if self.config_value('slack_bot') and self.config_value('slack'):
       self.log_to_slack(error_message, username, transaction_part)
       
 

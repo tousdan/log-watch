@@ -36,7 +36,6 @@ def indexes_for_date(environment, dates):
   return set(["cc-proteus-%s.%s" % (environment, str(dt.isocalendar()[1]), ) for dt in dates])
 
 def run(config):
-
   environment = config['environment']
 
   try:
@@ -104,10 +103,14 @@ def get_transaction_server(tx_dir, serve_config):
 if __name__ == '__main__':
   parser = argparse.ArgumentParser(description="Proteus API error transaction saver (and broadcaster!)")
   parser.add_argument("--config", action='store', dest='config', help='location of configuration file to use (defaults to config.json)', default='config.json', type=open)
+  parser.add_argument("--no-slack", action='store_false', dest="slack", default=True)
+
   args = parser.parse_args()
 
   with args.config as config_file:
     config = read_config(config_file)
+
+  config['slack'] = args.slack
 
   has_http_server = 'web_serve' in config
 
